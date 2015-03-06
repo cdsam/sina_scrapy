@@ -1,0 +1,112 @@
+import re  
+import json  
+  
+  
+from scrapy.selector import Selector  
+try:  
+    from scrapy.spider import Spider  
+except:  
+    from scrapy.spider import BaseSpider as Spider  
+from scrapy.utils.response import * 
+from scrapy.utils.url import urljoin_rfc  
+from scrapy.contrib.spiders import CrawlSpider, Rule  
+from scrapy.contrib.linkextractors.sgml import SgmlLinkExtractor as sle  
+from scrapy.http import Request  
+from scrapy.selector import HtmlXPathSelector
+from scrapy.contrib.linkextractors.sgml import SgmlLinkExtractor
+import sys,time
+import string
+from UrlData import NodeData
+from UrlSimilar import JudgeUrlSimilar
+
+#startout write into the file
+sys.stdout=open('E:\scrapy\out.txt','w')
+ 
+from testScrapy.items import *  
+  
+level = 0
+node = NodeData()
+similar = JudgeUrlSimilar()
+#store urls, new url will compare the urls,if it exist,it will be abandant.
+  
+class TestSpider(CrawlSpider):  
+    global level
+    global node
+    global similar
+    
+    name = "test" 
+    
+    allowed_domains = ["sina.com.cn"]  
+    start_urls = [ "http://www.sina.com.cn" ] 
+    rules = [ 
+        Rule(SgmlLinkExtractor(allow=('sina.com/', )), callback='parse_item'),
+        Rule(SgmlLinkExtractor(allow=('sina.com.cn/', )), callback='parse_item') 
+    ]
+
+
+    def parse_item(self, response):
+                      
+        sel = Selector(response)  
+        base_url = get_base_url(response)  
+        sites_even = sel.xpath('//a')
+        items = []
+        for site in sites_even: 
+            item = TestscrapyItem()
+            
+            #process the link element, find the abornal URL and delete
+            relative_url = site.xpath('@href').extract()
+            
+            if len(relative_url) == 0:
+                continue
+            elif relative_url[0].find('javascript') == 0:
+                continue
+            elif relative_url[0].startswith('mailto'):
+                continue
+            elif relative_url[0].startswith('#'):
+                continue
+            elif relative_url[0] == '#' :
+                continue
+            elif relative_url[0].startswith('http'):
+                time3 = time.time();
+                if node.judge_duplication(relative_url[0]):
+                    #print "the url has processed 2"
+                    time4 = time.time();
+                    print "time2: = %s " % str(time4-time3)
+                    continue
+                elif similar.judge_url_similar(relative_url[0]):
+                    continue              
+                else:
+                    item['link'] = relative_url                   
+            else:
+                if (isinstance(base_url,list)) and (isinstance(relative_url,list)):
+                    URL = urljoin_rfc(base_url, relative_url)
+                    time1 = time.time();
+                    if node.judge_duplication(URL):
+                        time2 = time.time()
+                        print "time1: = %s " % str(time2-time1)
+                        continue
+                    elif similar.judge_url_similar(URL):
+                        continue
+                    else:
+                        item['link']  = URL
+                else:
+                    continue
+            title = site.xpath('text()').extract()
+            #Deal with the abnoral title which can't get the text() from <a></a> directorly
+                
+            if title:
+                item['title']  = title
+            elif site.xpath('b/text()').extract():
+                item['title'] = site.xpath('b/text()').extract() 
+            elif site.xpath('span/text()').extract() == 0:
+                item['title'] = site.xpath('span/text()').extract()   
+            else:
+                continue
+                
+            item['parentLink'] = base_url
+            item['level'] = str(level)
+            #print repr(item).decode("utf8") + '\n'  
+            items.append(item)
+        return items
+
+        
